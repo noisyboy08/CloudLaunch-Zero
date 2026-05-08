@@ -1,0 +1,67 @@
+﻿name: terraform-plan
+
+on:
+  pull_request:
+    paths:
+      - "terraform/**"
+      - ".github/workflows/terraform-plan.yml"
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: tf-plan-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    name: Plan ${{ matrix.environment }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: [staging, production]
+
+    environment: ${{ matrix.environment }}
+
+    defaults:
+      run:
+        working-directory: terraform/environments/${{ matrix.environment }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.7.5
+          terraform_wrapper: false
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+          role-session-name: gh-tf-plan-${{ matrix.environment }}
+
+      - name: Terraform Fmt Check
+        working-directory: terraform
+        run: terraform fmt -recursive -check
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        env:
+          TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
+          TF_VAR_api_token: ${{ secrets.API_TOKEN }}
+          TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
+        run: terraform plan -no-color -input=false -out=tfplan.bin
+
+      - name: Show plan summary
+        run: terraform show -no-color tfplan.bin | head -n 500

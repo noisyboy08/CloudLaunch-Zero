@@ -1,0 +1,63 @@
+﻿name: terraform-apply
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        default: "staging"
+        type: choice
+        options:
+          - staging
+          - production
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: tf-apply-${{ github.event.inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    name: Apply ${{ github.event.inputs.environment }}
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+
+    defaults:
+      run:
+        working-directory: terraform/environments/${{ github.event.inputs.environment }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.7.5
+          terraform_wrapper: false
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+          role-session-name: gh-tf-apply-${{ github.event.inputs.environment }}
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Plan
+        env:
+          TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
+          TF_VAR_api_token: ${{ secrets.API_TOKEN }}
+          TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
+        run: terraform plan -input=false -out=tfplan.bin
+
+      - name: Terraform Apply
+        env:
+          TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
+          TF_VAR_api_token: ${{ secrets.API_TOKEN }}
+          TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
+        run: terraform apply -input=false -auto-approve tfplan.bin

@@ -1,0 +1,8 @@
+﻿{
+  "name": "cloudlaunch-zero-api-handler",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Lambda handler for CloudLaunch Zero",
+  "main": "index.js",
+  "license": "MIT"
+}
